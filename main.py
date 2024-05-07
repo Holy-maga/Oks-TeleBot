@@ -1,9 +1,10 @@
 from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import Message, LabeledPrice, PreCheckoutQuery
+from aiogram.types import Message, LabeledPrice, PreCheckoutQuery, callback_query
 from aiogram.types import ContentType
 from datetime import datetime, timedelta
 from aiogram.utils.exceptions import BotBlocked
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from typing import Union
 import logging
 import sqlite3
 
@@ -12,7 +13,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 API_TOKEN = '7065316103:AAHMt8AqvmI-y8XbaePZSZ36ULUzVq0mD60'
 PAYMENTS_PROVIDER_TOKEN = '381764678:TEST:82121'  # Токен от платежной системы
-CHANNEL_LINK = 't.me/testoks1'  # Ссылка на ваш канал
+CHANNEL_LINK = 'https://t.me/+6mlMo8VpNRRhNmJi'   # Ссылка на ваш канал
+# https://t.me/+6mlMo8VpNRRhNmJi
+# канал оксаны
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +30,7 @@ cursor = conn.cursor()
 
 #кнопка оплатить
 keyboard = InlineKeyboardMarkup(resize_keyboard=True)
-button_text = "Оплата подпискии"  # Текст на кнопке
+button_text = "хочу рецепты 🥣"  # Текст на кнопке
 button = InlineKeyboardButton(button_text, callback_data='buy')  # Создаем кнопку с указанным текстом
 keyboard.add(button)  # Добавляем кнопку к клавиатуре
 
@@ -71,9 +74,17 @@ async def start(message: types.Message):
     if result is None:
         # Если пользователь не найден, регистрируем его
         register_user(message.from_user.id, message.from_user.id, message.from_user.username, message.from_user.full_name, 0)
-        await message.answer("Вы успешно зарегистрированы!", reply_markup=keyboard)
+        # await message.answer("Вы успешно зарегистрированы!")
+        await message.answer("""⭕️ Внимание:
+- первоначальный взнос: 800р
+- продление подписки: 300р""")
+        await message.answer("Чтобы приобрести подписку на канал, нажмите на кнопку ниже", reply_markup=keyboard)
     else:
-        await message.answer("Вы уже зарегистрированы!", reply_markup=keyboard)
+        # await message.answer("Вы уже зарегистрированы!")
+        await message.answer("""⭕️ Внимание:
+- первоначальный взнос: 800р
+- продление подписки: 300р""")
+        await message.answer("Чтобы приобрести подписку на канал, нажмите на кнопку ниже", reply_markup=keyboard)
 @dp.errors_handler(exception=BotBlocked)
 async def error_bot_blocked_handler(update: types. Update, exception: BotBlocked) -> bool:
     print( 'Нельзя отправить сообщение, потому что нас заблокировали!')
@@ -90,7 +101,9 @@ async def handle_buy_subscription(callback_query: types.CallbackQuery):
                                    ]
                                ]
                            ))
-
+@dp.message_handler(commands=['buy'])
+async def cmd_subscribe(message: types.Message):
+    await message.answer("Оплата 💳", reply_markup=keyboard)
 # Обработчик команды /buy
 @dp.callback_query_handler(lambda query: query.data == 'buy')
 async def cmd_subscribe(callback_query: types.CallbackQuery):
@@ -101,17 +114,17 @@ async def cmd_subscribe(callback_query: types.CallbackQuery):
         # Первый платеж
         await bot.send_invoice(
             callback_query.from_user.id,
-            title="Подписка на сервис",
-            description="Оплата первоначального взноса",
+            title="Подписка на рецепты",
+            description="Оплата стартовой подписки",
             provider_token=PAYMENTS_PROVIDER_TOKEN,
             currency="rub",
             prices=[LabeledPrice(label="Подписка", amount=800*100)],  # 800 рублей
             start_parameter="subscription",
             payload="subscription-payment",
-            photo_url="https://www.google.com/url?sa=i&url=https%3A%2F%2Fsteamcommunity.com%2Fsharedfiles%2Ffiledetails%2F%3Fid%3D2280067424&psig=AOvVaw00vhGqiTKf3BVEWiHfSKbW&ust=1714223201737000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCNiPlpr534UDFQAAAAAdAAAAABAJ",
-            photo_height=512,
-            photo_width=512,
-            photo_size=51200
+            # photo_url="https://www.google.com/url?sa=i&url=https%3A%2F%2Fsteamcommunity.com%2Fsharedfiles%2Ffiledetails%2F%3Fid%3D2280067424&psig=AOvVaw00vhGqiTKf3BVEWiHfSKbW&ust=1714223201737000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCNiPlpr534UDFQAAAAAdAAAAABAJ",
+            # photo_height=512,
+            # photo_width=512,
+            # photo_size=51200
         )
     else:
         # Продление подписки
@@ -124,11 +137,16 @@ async def cmd_subscribe(callback_query: types.CallbackQuery):
             prices=[LabeledPrice(label="Продление", amount=300*100)],  # 300 рублей
             start_parameter="subscription_renewal",
             payload="subscription-renewal-payment",
-            photo_url="https://www.google.com/url?sa=i&url=https%3A%2F%2Fsteamcommunity.com%2Fsharedfiles%2Ffiledetails%2F%3Fid%3D2280067424&psig=AOvVaw00vhGqiTKf3BVEWiHfSKbW&ust=1714223201737000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCNiPlpr534UDFQAAAAAdAAAAABAJ",
-            photo_height=512,
-            photo_width=512,
-            photo_size=51200
+            # photo_url="https://www.google.com/url?sa=i&url=https%3A%2F%2Fsteamcommunity.com%2Fsharedfiles%2Ffiledetails%2F%3Fid%3D2280067424&psig=AOvVaw00vhGqiTKf3BVEWiHfSKbW&ust=1714223201737000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCNiPlpr534UDFQAAAAAdAAAAABAJ",
+            # photo_height=512,
+            # photo_width=512,
+            # photo_size=51200
         )
+# # Обработчик не успешного платежа
+# @dp.pre_checkout_query_handler(lambda query: not query.ok)
+# async def not_successful_payment(pre_checkout_q: PreCheckoutQuery):
+#     user_id = pre_checkout_q.from_user.id
+#     await bot.send_message(user_id, "Извините, ваш платеж не был завершен. Попробуйте снова.")
 
 # Обработчик успешного платежа
 @dp.pre_checkout_query_handler(lambda query: True)
@@ -154,16 +172,15 @@ async def cancel_subscription(user_id, start_date):
     await kick_user(user_id)
     admin_id = '640485918'
 
-# Функция для проверки, прошло ли месяц с момента последней оплаты
+# Функция для проверки, прошёл ли месяц с момента последней оплаты
 async def check_subscription_expiration(user_id):
-    cursor.execute('SELECT subscription_date FROM subscriptions WHERE user_id = ?', (user_id,))
-    subscription_info = cursor.fetchone()
-    if subscription_info is not None:
-        subscription_date = subscription_info
-        subscription_date = datetime.strptime(subscription_date[0], '%Y-%m-%d %H:%M:%S')
+    cursor.execute('SELECT has_subscription, subscription_date FROM subscriptions WHERE user_id = ?', (user_id,))
+    result = cursor.fetchone()
+    if result and result[0]:  # Если есть подписка
+        subscription_date = datetime.strptime(result[1], '%Y-%m-%d %H:%M:%S')
         if subscription_date + timedelta(seconds=10) <= datetime.now():
             # Отправка напоминания о продлении подписки
-            await bot.send_message(user_id, f"Уважаемый, ваша подписка заканчивается. Пожалуйста, продлите её.")
+            await bot.send_message(user_id, "Ваша подписка заканчивается. Пожалуйста, продлите её.")
 
 
 # Обработчик успешного платежа
@@ -187,9 +204,12 @@ async def successful_payment(message: Message):
     scheduler.add_job(check_subscription_expiration, 'date', run_date=datetime.now() + timedelta(seconds=10),
                       args=[message.from_user.id])
 
-    # Запланировать отмену подписки через 20 секунд после успешной оплаты
-    start_date = datetime.now() + timedelta(seconds=20)
-    scheduler.add_job(cancel_subscription, 'date', run_date=start_date, args=[message.from_user.id, start_date])
+    cursor.execute('SELECT has_subscription FROM subscriptions WHERE user_id = ?', (message.from_user.id,))
+    result = cursor.fetchone()
+    if result and result[0]:
+        # Запланировать отмену подписки через 20 секунд после успешной оплаты, если has_subscription = 0
+        start_date = datetime.now() + timedelta(seconds=20)
+        scheduler.add_job(cancel_subscription, 'date', run_date=start_date, args=[message.from_user.id, start_date])
 
 # Функция для получения статуса подписки пользователя
 def get_subscription_status(user_id):
@@ -198,6 +218,41 @@ def get_subscription_status(user_id):
     result = cursor.fetchone()
     conn.close()
     return result[0] if result else False
+
+#обработка команды:Пригласить друзей
+@dp.message_handler(commands=['share'])
+async def share(message: Message):
+        invite_message = "Поделись мной со своими друзьями, отправив им эту ссылку: https://t.me/Oksyourselfbot"
+        await message.answer(invite_message)
+
+
+# обработка команды проверки статуса подписки
+@dp.message_handler(commands=['status'])
+async def check_subscription_status(message: types.Message):
+    cursor = conn.cursor()
+    cursor.execute('SELECT has_subscription FROM subscriptions WHERE user_id = ?', (message.from_user.id,))
+    result = cursor.fetchone()
+    if result is not None:
+        has_subscription = result[0]
+        if has_subscription:
+            await bot.send_message(message.chat.id, "Подписка активна")
+        else:
+            await bot.send_message(message.chat.id, "Подписка не активна", reply_markup=keyboard)
+    else:
+        await bot.send_message(message.chat.id, "Пользователь не найден в базе данных")
+#обработка команды: отмена подписки
+@dp.message_handler(commands=['cancel'])
+async def cancel(message: Message):
+    cursor = conn.cursor()
+    cursor.execute('UPDATE subscriptions SET has_subscription = 0 WHERE user_id = ?', (message.from_user.id,))
+    conn.commit()
+    await bot.send_message(message.chat.id, "Ваша подписка отменена")
+    await bot.send_message(message.chat.id, "спасибо что были с нами ❤️")
+
+#обработка команды: помощь
+@dp.message_handler(commands=['help'])
+async def help(message: Message):
+    await bot.send_message(message.chat.id, "Напишите нам мы вас внимательно выслушаем: https://t.me/Oksyourself")
 
 # Запуск бота и планировщика задач
 if __name__ == '__main__':
