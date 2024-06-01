@@ -4,18 +4,18 @@ from aiogram.types import ContentType
 from datetime import datetime, timedelta
 from aiogram.utils.exceptions import BotBlocked
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from dotenv import load_dotenv
 from typing import Union
 import logging
 import sqlite3
+import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
-API_TOKEN = '7065316103:AAHMt8AqvmI-y8XbaePZSZ36ULUzVq0mD60'
-PAYMENTS_PROVIDER_TOKEN = '381764678:TEST:82121'  # Токен от платежной системы
-CHANNEL_LINK = 'https://t.me/+6mlMo8VpNRRhNmJi'   # Ссылка на ваш канал
-# https://t.me/+6mlMo8VpNRRhNmJi
-# канал оксаны
+API_TOKEN = 'API_TOKEN'
+PAYMENTS_PROVIDER_TOKEN = os.getenv('PAYMENTS_PROVIDER_TOKEN')
+CHANNEL_LINK = os.getenv('CHANNEL_LINK')
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
