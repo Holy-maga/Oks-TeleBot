@@ -12,10 +12,14 @@ import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+load_dotenv()
 
-API_TOKEN = 'API_TOKEN'
+API_TOKEN = os.getenv('API_TOKEN')
 PAYMENTS_PROVIDER_TOKEN = os.getenv('PAYMENTS_PROVIDER_TOKEN')
 CHANNEL_LINK = os.getenv('CHANNEL_LINK')
+
+if not API_TOKEN or not PAYMENTS_PROVIDER_TOKEN or not CHANNEL_LINK:
+    raise ValueError("Не удалось получить переменные окружения. Проверьте файл .env.")
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
