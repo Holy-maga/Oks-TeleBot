@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import Message, LabeledPrice, PreCheckoutQuery, callback_query
 from aiogram.types import ContentType
@@ -10,10 +12,12 @@ import logging
 import sqlite3
 import os
 
+from yookassa import Payment
+import uuid
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 load_dotenv()
-
 
 API_TOKEN = os.getenv('API_TOKEN')
 PAYMENTS_PROVIDER_TOKEN = os.getenv('PAYMENTS_PROVIDER_TOKEN')
@@ -126,10 +130,7 @@ async def cmd_subscribe(callback_query: types.CallbackQuery):
             prices=[LabeledPrice(label="Подписка", amount=800*100)],  # 800 рублей
             start_parameter="subscription",
             payload="subscription-payment",
-            # photo_url="https://www.google.com/url?sa=i&url=https%3A%2F%2Fsteamcommunity.com%2Fsharedfiles%2Ffiledetails%2F%3Fid%3D2280067424&psig=AOvVaw00vhGqiTKf3BVEWiHfSKbW&ust=1714223201737000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCNiPlpr534UDFQAAAAAdAAAAABAJ",
-            # photo_height=512,
-            # photo_width=512,
-            # photo_size=51200
+
         )
     else:
         # Продление подписки
@@ -142,16 +143,8 @@ async def cmd_subscribe(callback_query: types.CallbackQuery):
             prices=[LabeledPrice(label="Продление", amount=300*100)],  # 300 рублей
             start_parameter="subscription_renewal",
             payload="subscription-renewal-payment",
-            # photo_url="https://www.google.com/url?sa=i&url=https%3A%2F%2Fsteamcommunity.com%2Fsharedfiles%2Ffiledetails%2F%3Fid%3D2280067424&psig=AOvVaw00vhGqiTKf3BVEWiHfSKbW&ust=1714223201737000&source=images&cd=vfe&opi=89978449&ved=0CBIQjRxqFwoTCNiPlpr534UDFQAAAAAdAAAAABAJ",
-            # photo_height=512,
-            # photo_width=512,
-            # photo_size=51200
+
         )
-# # Обработчик не успешного платежа
-# @dp.pre_checkout_query_handler(lambda query: not query.ok)
-# async def not_successful_payment(pre_checkout_q: PreCheckoutQuery):
-#     user_id = pre_checkout_q.from_user.id
-#     await bot.send_message(user_id, "Извините, ваш платеж не был завершен. Попробуйте снова.")
 
 # Обработчик успешного платежа
 @dp.pre_checkout_query_handler(lambda query: True)
@@ -259,6 +252,9 @@ async def cancel(message: Message):
 async def help(message: Message):
     await bot.send_message(message.chat.id, "Напишите нам мы вас внимательно выслушаем: https://t.me/Oksyourself")
 
+async def main():
+    executor.start_polling(bot, skip_updates=False)
 # Запуск бота и планировщика задач
-if __name__ == '__main__':
-    executor.start_polling(dp, skip_updates=True)
+if __name__ == ' __main__':
+    logging.basicConfig(Level=logging.INFO)
+    asyncio.run(main())

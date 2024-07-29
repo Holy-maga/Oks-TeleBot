@@ -22,13 +22,14 @@ DATABASE = 'subscriptions.db'
 
 async def update_subscription(user_id, first_payment):
     async with aiosqlite.connect(DATABASE) as db:
+        cur = db.cursor()
         if first_payment:
-            await db.execute("UPDATE subscriptions SET has_paid = 1, subscription_date = ? WHERE user_id = ?,", (datetime.now(), user_id))
+            cur.execute("UPDATE subscriptions SET has_paid = 1, subscription_date = ? WHERE user_id = ?,", (datetime.now(), user_id))
             logging.info(f"Первый платеж успешно записан в базу данных для пользователя {user_id}")
         else:
-            await db.execute("UPDATE subscriptions SET subscription_date = ? WHERE user_id = ?", (datetime.now(), user_id))
+            cur.execute("UPDATE subscriptions SET subscription_date = ? WHERE user_id = ?", (datetime.now(), user_id))
             logging.info(f"Продление подписки успешно записано в базу данных для пользователя {user_id}")
-        await db.commit()
+        cur.commit()
 
 async def verify_signature(request: Request) -> bool:
     body = await request.body()
