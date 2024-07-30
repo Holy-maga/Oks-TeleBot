@@ -11,10 +11,9 @@ import requests
 import uuid
 import logging
 import os
-
+from WebHook import app
 from Payment import create_payment
 import uvicorn
-from WebHook import app as webhook_app
 
 load_dotenv()
 
@@ -101,3 +100,4 @@ logging.basicConfig(level=logging.INFO)
 loop = asyncio.get_event_loop()
 loop.create_task(create_db())
 executor.start_polling(dp, skip_updates=True)
+uvicorn.run(app, host="0.0.0.0", port=8000)
