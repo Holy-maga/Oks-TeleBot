@@ -67,7 +67,9 @@ async def yookassa_webhook(request: Request):
         logging.error(f"Ошибка при обработке вебхука: {e}")
 
     return {"status": "ok"}
-
+@app.get("/yookassa-webhook")
+async def yookassa_webhook(request: Request):
+    return {"status": "ok"}
 async def update_subscription(user_id, first_payment):
     try:
         async with aiosqlite.connect(DATABASE) as db:
@@ -89,6 +91,6 @@ async def update_subscription(user_id, first_payment):
     except Exception as e:
         logging.error(f"Ошибка при обновлении подписки для пользователя {user_id}: {e}")
 
-
-import uvicorn
-uvicorn.run(app, host="0.0.0.0", port=8001)
+if __name__ == ' __main__':
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

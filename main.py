@@ -1,260 +1,103 @@
+from fastapi import FastAPI, Request, HTTPException
 import asyncio
-
-from aiogram import Bot, Dispatcher, executor, types
+from aiogram import Bot, Dispatcher, types
 from aiogram.types import Message, LabeledPrice, PreCheckoutQuery, callback_query
-from aiogram.types import ContentType
+from aiogram.utils import executor
+import aiosqlite
 from datetime import datetime, timedelta
-from aiogram.utils.exceptions import BotBlocked
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 from typing import Union
+import requests
+import uuid
 import logging
-import sqlite3
 import os
 
-from yookassa import Payment
-import uuid
-
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from Payment import create_payment
+import uvicorn
+from WebHook import app as webhook_app
 
 load_dotenv()
 
 API_TOKEN = os.getenv('API_TOKEN')
+YOO_KASSA_SECRET_KEY = os.getenv('YOOKASSA_SECRET_KEY')
 PAYMENTS_PROVIDER_TOKEN = os.getenv('PAYMENTS_PROVIDER_TOKEN')
-CHANNEL_LINK = os.getenv('CHANNEL_LINK')
 
-if not API_TOKEN or not PAYMENTS_PROVIDER_TOKEN or not CHANNEL_LINK:
-    raise ValueError("Не удалось получить переменные окружения. Проверьте файл .env.")
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
-# Инициализация бота и диспетчера
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+DATABASE = 'subscriptions.db'
 
-# Инициализация соединения с базой данных SQLite
-conn = sqlite3.connect('subscriptions.db', check_same_thread=False)
-cursor = conn.cursor()
 
-#кнопка оплатить
-keyboard = InlineKeyboardMarkup(resize_keyboard=True)
-button_text = "хочу рецепты 🥣"  # Текст на кнопке
-button = InlineKeyboardButton(button_text, callback_data='buy')  # Создаем кнопку с указанным текстом
-keyboard.add(button)  # Добавляем кнопку к клавиатуре
-
-# Создание таблицы, если она не существует
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS subscriptions (
-    user_id INTEGER PRIMARY KEY,
-    telegram_id TEXT NOT NULL,
-    username TEXT,
-    full_name TEXT NOT NULL,
-    age INTEGER,
-    has_subscription BOOLEAN NOT NULL DEFAULT 0,
-    subscription_date TEXT,
-    first_payment_date TEXT,
-    has_paid BOOLEAN NOT NULL DEFAULT 0
-)
-''')
-conn.commit()
-
-# Инициализация планировщика задач
-scheduler = AsyncIOScheduler()
-scheduler.start()
-
-# Функция для обновления статуса подписки пользователя после успешного платежа
-def update_subscription_status(user_id, subscription_date):
-    cursor.execute('UPDATE subscriptions SET has_subscription = 1, subscription_date = ? WHERE user_id = ?', (subscription_date, user_id))
-    conn.commit()
-
-# Функция для регистрации нового пользователя
-def register_user(user_id, telegram_id, username, full_name, age):
-    cursor.execute('INSERT INTO subscriptions (user_id, telegram_id, username, full_name, age, has_paid) VALUES (?, ?, ?, ?, ?, ?)',
-                   (user_id, telegram_id, username, full_name, age, 0))
-    conn.commit()
+async def create_db():
+    async with aiosqlite.connect(DATABASE) as db:
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                user_id INTEGER PRIMARY KEY,
+                subscription_date TIMESTAMP,
+                has_paid BOOLEAN
+            )
+        ''')
+        await db.commit()
 
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
-    await message.answer(f'{message.from_user.first_name}, добро пожаловать в магазин')
-    # Проверка, есть ли пользователь в базе данных
-    cursor.execute('SELECT user_id FROM subscriptions WHERE user_id = ?', (message.from_user.id,))
-    result = cursor.fetchone()
-    if result is None:
-        # Если пользователь не найден, регистрируем его
-        register_user(message.from_user.id, message.from_user.id, message.from_user.username, message.from_user.full_name, 0)
-        # await message.answer("Вы успешно зарегистрированы!")
-        await message.answer("""⭕️ Внимание:
-- первоначальный взнос: 800р
-- продление подписки: 300р""")
-        await message.answer("Чтобы приобрести подписку на канал, нажмите на кнопку ниже", reply_markup=keyboard)
-    else:
-        # await message.answer("Вы уже зарегистрированы!")
-        await message.answer("""⭕️ Внимание:
-- первоначальный взнос: 800р
-- продление подписки: 300р""")
-        await message.answer("Чтобы приобрести подписку на канал, нажмите на кнопку ниже", reply_markup=keyboard)
-@dp.errors_handler(exception=BotBlocked)
-async def error_bot_blocked_handler(update: types. Update, exception: BotBlocked) -> bool:
-    print( 'Нельзя отправить сообщение, потому что нас заблокировали!')
+    user_id = message.from_user.id
 
-# Обработчик нажатия на кнопку "Оплата подписки"
-@dp.callback_query_handler(lambda query: query.data == 'buy_subscription')
-async def handle_buy_subscription(callback_query: types.CallbackQuery):
-    # Отправляем сообщение с кнопкой "Оплатить подписку"
-    await bot.send_message(callback_query.from_user.id, "Нажмите кнопку, чтобы оплатить подписку.",
-                           reply_markup=types.InlineKeyboardMarkup(
-                               inline_keyboard=[
-                                   [
-                                       types.InlineKeyboardButton("Оплатить подписку", callback_data="buy")
-                                   ]
-                               ]
-                           ))
-@dp.message_handler(commands=['buy'])
-async def cmd_subscribe(message: types.Message):
-    await message.answer("Оплата 💳", reply_markup=keyboard)
+    async with aiosqlite.connect(DATABASE) as db:
+        # Проверяем, есть ли пользователь в базе данных
+        cursor = await db.execute('SELECT user_id FROM subscriptions WHERE user_id = ?', (user_id,))
+        result = await cursor.fetchone()
+
+        if result is None:
+            # Добавляем пользователя в базу данных
+            await db.execute('''
+                INSERT INTO subscriptions (user_id, subscription_date, has_paid)
+                VALUES (?, ?, ?)
+            ''', (user_id, None, False))
+            await db.commit()
+    await message.answer(f'{message.from_user.first_name}, добро пожаловать!')
+    await message.answer("""⭕️ Внимание:
+- первоначальный взнос: 800р
+- продление подписки: 300р""")
+    await message.answer("Чтобы приобрести подписку на канал, нажмите на /buy")
+
 # Обработчик команды /buy
-@dp.callback_query_handler(lambda query: query.data == 'buy')
-async def cmd_subscribe(callback_query: types.CallbackQuery):
-    # Проверка, является ли это первый платеж
-    cursor.execute('SELECT has_paid FROM subscriptions WHERE user_id = ?', (callback_query.from_user.id,))
-    result = cursor.fetchone()
-    if result is None or not result[0]:
-        # Первый платеж
-        await bot.send_invoice(
-            callback_query.from_user.id,
-            title="Подписка на рецепты",
-            description="Оплата стартовой подписки",
-            provider_token=PAYMENTS_PROVIDER_TOKEN,
-            currency="rub",
-            prices=[LabeledPrice(label="Подписка", amount=800*100)],  # 800 рублей
-            start_parameter="subscription",
-            payload="subscription-payment",
+@dp.message_handler(commands=['buy'])
+async def process_buy(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    logging.info(f"Обработка покупки для пользователя {user_id}")
 
-        )
-    else:
-        # Продление подписки
-        await bot.send_invoice(
-            callback_query.from_user.id,
-            title="Продление подписки",
-            description="Оплата продления подписки",
-            provider_token=PAYMENTS_PROVIDER_TOKEN,
-            currency="rub",
-            prices=[LabeledPrice(label="Продление", amount=300*100)],  # 300 рублей
-            start_parameter="subscription_renewal",
-            payload="subscription-renewal-payment",
+    async with aiosqlite.connect(DATABASE) as db:
+        cursor = await db.execute('SELECT has_paid FROM subscriptions WHERE user_id = ?', (user_id,))
+        result = await cursor.fetchone()
+        logging.info(f"Результат запроса в БД для пользователя {user_id}: {result}")
 
-        )
-
-# Обработчик успешного платежа
-@dp.pre_checkout_query_handler(lambda query: True)
-async def pre_checkout_query(pre_checkout_q: PreCheckoutQuery):
-    await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=True)
-
-# отправляем админу сообщение на исключение пользователя из канала
-async def kick_user(user_id):
-    cursor.execute('SELECT full_name FROM subscriptions WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-    admin_id = '640485918'
-    if result:
-        full_name = result[0]
-        # Отправляем сообщение с указанием полного имени
-        await bot.send_message(admin_id, f"{full_name}, удали его")
-    else:
-        print(f"Пользователь с ID {user_id} не найден в базе данных.")
-# Функция для отмены подписки
-async def cancel_subscription(user_id, start_date):
-    cursor.execute('UPDATE subscriptions SET has_subscription = 0 WHERE user_id = ?', (user_id,))
-    conn.commit()
-    await bot.send_message(user_id, "Подписка автоматически отменена из-за неоплаты продления.")
-    await kick_user(user_id)
-    admin_id = '640485918'
-
-# Функция для проверки, прошёл ли месяц с момента последней оплаты
-async def check_subscription_expiration(user_id):
-    cursor.execute('SELECT has_subscription, subscription_date FROM subscriptions WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-    if result and result[0]:  # Если есть подписка
-        subscription_date = datetime.strptime(result[1], '%Y-%m-%d %H:%M:%S')
-        if subscription_date + timedelta(seconds=10) <= datetime.now():
-            # Отправка напоминания о продлении подписки
-            await bot.send_message(user_id, "Ваша подписка заканчивается. Пожалуйста, продлите её.")
-
-
-# Обработчик успешного платежа
-@dp.message_handler(content_types=ContentType.SUCCESSFUL_PAYMENT)
-async def successful_payment(message: Message):
-
-    # Обновление статуса подписки и оплаты пользователя
-    subscription_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    update_subscription_status(message.from_user.id, subscription_date)
-
-    # Set has_paid to True for the user
-    cursor.execute('UPDATE subscriptions SET has_paid = 1 WHERE user_id = ?', (message.from_user.id,))
-    conn.commit()
-
-    await check_subscription_expiration(message.from_user.id)
-
-    await bot.send_message(message.chat.id, "Спасибо за покупку!")
-    await bot.send_message(message.chat.id, f'ссылка на канал {CHANNEL_LINK}')
-
-    # Запланировать проверку подписки через 10 секунд 
-    scheduler.add_job(check_subscription_expiration, 'date', run_date=datetime.now() + timedelta(seconds=10),
-                      args=[message.from_user.id])
-
-    cursor.execute('SELECT has_subscription FROM subscriptions WHERE user_id = ?', (message.from_user.id,))
-    result = cursor.fetchone()
-    if result and result[0]:
-        # Запланировать отмену подписки через 20 секунд после успешной оплаты, если has_subscription = 0
-        start_date = datetime.now() + timedelta(seconds=20)
-        scheduler.add_job(cancel_subscription, 'date', run_date=start_date, args=[message.from_user.id, start_date])
-
-# Функция для получения статуса подписки пользователя
-def get_subscription_status(user_id):
-    cursor = conn.cursor()
-    cursor.execute('SELECT has_subscription FROM subscriptions WHERE user_id = ?', (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else False
-
-#обработка команды:Пригласить друзей
-@dp.message_handler(commands=['share'])
-async def share(message: Message):
-        invite_message = "Поделись мной со своими друзьями, отправив им эту ссылку: https://t.me/Oksyourselfbot"
-        await message.answer(invite_message)
-
-
-# обработка команды проверки статуса подписки
-@dp.message_handler(commands=['status'])
-async def check_subscription_status(message: types.Message):
-    cursor = conn.cursor()
-    cursor.execute('SELECT has_subscription FROM subscriptions WHERE user_id = ?', (message.from_user.id,))
-    result = cursor.fetchone()
-    if result is not None:
-        has_subscription = result[0]
-        if has_subscription:
-            await bot.send_message(message.chat.id, "Подписка активна")
+        if result is None or not result[0]:
+            # Первый платеж
+            try:
+                payment = create_payment(800.00, "Первый платеж за подписку", user_id, first_payment=True)
+                payment_url = payment['confirmation']['confirmation_url']
+                await bot.send_message(user_id, f"Для оплаты перейдите по ссылке: {payment_url}")
+                logging.info(f"Ссылка для оплаты первого платежа отправлена пользователю {user_id}: {payment_url}")
+            except Exception as e:
+                await bot.send_message(user_id, f"Ошибка при создании платежа: {e}")
+                logging.error(f"Ошибка при создании первого платежа для пользователя {user_id}: {e}")
         else:
-            await bot.send_message(message.chat.id, "Подписка не активна", reply_markup=keyboard)
-    else:
-        await bot.send_message(message.chat.id, "Пользователь не найден в базе данных")
-#обработка команды: отмена подписки
-@dp.message_handler(commands=['cancel'])
-async def cancel(message: Message):
-    cursor = conn.cursor()
-    cursor.execute('UPDATE subscriptions SET has_subscription = 0 WHERE user_id = ?', (message.from_user.id,))
-    conn.commit()
-    await bot.send_message(message.chat.id, "Ваша подписка отменена")
-    await bot.send_message(message.chat.id, "спасибо что были с нами ❤️")
+            # Продление подписки
+            try:
+                payment = create_payment(300.00, "Продление подписки", user_id, first_payment=False)
+                payment_url = payment['confirmation']['confirmation_url']
+                await bot.send_message(user_id, f"Для оплаты перейдите по ссылке: {payment_url}")
+                logging.info(f"Ссылка для оплаты продления подписки отправлена пользователю {user_id}: {payment_url}")
+            except Exception as e:
+                await bot.send_message(user_id, f"Ошибка при создании платежа: {e}")
+                logging.error(f"Ошибка при создании продления подписки для пользователя {user_id}: {e}")
 
-#обработка команды: помощь
-@dp.message_handler(commands=['help'])
-async def help(message: Message):
-    await bot.send_message(message.chat.id, "Напишите нам мы вас внимательно выслушаем: https://t.me/Oksyourself")
 
-async def main():
-    executor.start_polling(bot, skip_updates=False)
-# Запуск бота и планировщика задач
-if __name__ == ' __main__':
-    logging.basicConfig(Level=logging.INFO)
-    asyncio.run(main())
+logging.basicConfig(level=logging.INFO)
+loop = asyncio.get_event_loop()
+loop.create_task(create_db())
+executor.start_polling(dp, skip_updates=True)
