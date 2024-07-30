@@ -95,9 +95,13 @@ async def process_buy(callback_query: types.CallbackQuery):
                 await bot.send_message(user_id, f"Ошибка при создании платежа: {e}")
                 logging.error(f"Ошибка при создании продления подписки для пользователя {user_id}: {e}")
 
+async def server_start():
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+    server = uvicorn.Server(config)
+    await server.serve()
 
 logging.basicConfig(level=logging.INFO)
 loop = asyncio.get_event_loop()
 loop.create_task(create_db())
+loop.create_task(server_start())
 executor.start_polling(dp, skip_updates=True)
-uvicorn.run(app, host="0.0.0.0", port=8000)
